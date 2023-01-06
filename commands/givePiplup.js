@@ -1,7 +1,5 @@
 const { SlashCommandBuilder } = require("discord.js");
-const { givePiplupCommand } = require('../google.js');
-// const dex = require('../google.js').getDex();
-// const monsUnavailable = require('../google.js').getDrafted();
+const { getCoachNameCommand, givePiplupCommand } = require('../google.js');
 
 // A test command to make sure the bot can access the Google Sheets as needed
 module.exports = {
@@ -9,7 +7,11 @@ module.exports = {
         .setName('give-piplup')
         .setDescription('Gives the requestor a Piplup.'),
     async execute(interaction) {
-        await interaction.reply('As you wish.');
-        await givePiplupCommand(interaction.user.username);
+        const coachName = await getCoachNameCommand(interaction.user.username);
+        if (!coachName || typeof coachName === 'Error') {
+            await interaction.reply(`I wasn't able to find a coach by your username, ${interaction.user.username}.`); 
+        }
+        await givePiplupCommand(coachName);
+        await interaction.reply(`Done. Coach ${coachName} now has a Piplup.`);
     },
 };

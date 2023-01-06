@@ -3,6 +3,7 @@ const path = require('path');
 const process = require('process');
 const {authenticate} = require('@google-cloud/local-auth');
 const {google} = require('googleapis');
+const { SlashCommandSubcommandGroupBuilder } = require('discord.js');
 
 // If modifying these scopes, delete token.json.
 const SCOPES = ['https://www.googleapis.com/auth/spreadsheets'];
@@ -66,38 +67,45 @@ async function authorize() {
 }
 
 /**
- * Prints the team names within the sheet:
+ * Returns the name of the coach based on a specified Discord username:
  * @see https://docs.google.com/spreadsheets/d/1-pKd7FVAo_ciEFYTUVYQyvK5vK2Ich31cOMoUhPcf-Q/edit
  * @param {google.auth.OAuth2} auth The authenticated Google OAuth client.
+ * @param {string} discordName The Discord username of the coach.
  */
-async function listTeams(auth) {
+async function getCoachName(auth, discordName) {
+  // Forward the authentication to the sheets API requestor
   const sheets = google.sheets({version: 'v4', auth});
+  // Make a GET request to the sheet
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: '1-pKd7FVAo_ciEFYTUVYQyvK5vK2Ich31cOMoUhPcf-Q',
-    range: 'Rosters!E8:E',
+    range: 'Coaches!E1:R53',
+    majorDimension: 'COLUMNS'
   });
-  const rows = res.data.values;
-  if (!rows || rows.length === 0) {
-    console.log('No data found.');
-    return;
+  // Parse the response
+  const columns = res.data.values;
+  // Exit the function if no data present
+  if (!columns || columns.length === 0) {
+    throw new Error('No data found.');
   }
-  console.log('Team Name: ');
-  rows.forEach((row) => {
-    if (row[0] === 'ARC.' ||
-        row[0] === 'Remaining Points:' ||
-        row[0] === undefined) {
-    } else {
-      console.log(`${row[0]}`);
+  // Iterate through the columns, and upon matching the Discord name, return the coach name.
+  for (let i = 0; i < columns.length; i++) {
+    for (let j = 0; j < columns[i].length; j++) {
+      if (columns[i][j] === discordName) {
+        return columns[i+1][j-6];
+      }
     }
-  });
+  }
+
+  return Error('Coach not found.');
 }
 
 /**
- * Prints the passed coach's roster within the sheet:
+ * Returns the index that points to the specified coach's roster:
  * @see https://docs.google.com/spreadsheets/d/1-pKd7FVAo_ciEFYTUVYQyvK5vK2Ich31cOMoUhPcf-Q/edit
  * @param {google.auth.OAuth2} auth The authenticated Google OAuth client.
+ * @param {string} coachName The name of the coach to match in the query.
  */
-async function returnRosterIndex(auth, coachName) {
+async function getRosterIndex(auth, coachName) {
   // Forward the authentication to the sheets API requestor
   const sheets = google.sheets({version: 'v4', auth});
   // Make a GET request to the sheet
@@ -140,7 +148,7 @@ async function givePiplup(auth, coachName) {
     values,
   };
   try {
-    const indexToUpdate = await returnRosterIndex(auth, coachName);
+    const indexToUpdate = await getRosterIndex(auth, coachName);
     const result = await sheets.spreadsheets.values.update({
       spreadsheetId: '1-pKd7FVAo_ciEFYTUVYQyvK5vK2Ich31cOMoUhPcf-Q',
       range: `Rosters!V${indexToUpdate}`,
@@ -154,6 +162,156 @@ async function givePiplup(auth, coachName) {
   }
 }
 
-exports.givePiplupCommand = function(username) {
-  authorize().then((client) => givePiplup(client, username)).catch(console.error);
+async function getPointsForTargetPokemon(auth, target) {
+  const response = [];
+  // Forward the authentication to the sheets API requestor
+  const sheets = google.sheets({version: 'v4', auth});
+  // Make a GET request to the sheet
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: '1-pKd7FVAo_ciEFYTUVYQyvK5vK2Ich31cOMoUhPcf-Q',
+    range: 'Point Tier List!A1:CI77',
+    majorDimension: 'COLUMNS'
+  });
+  // Parse the response
+  const columns = res.data.values;
+  // Iterate through the response searching for the targets
+  for (let i = 9; i < columns.length; i += 4) {
+    for (let j = 8; j < columns[i].length; j++) {
+      // On finding a match, push an object to the response array if it is available
+      if (target.includes(columns[i][j])) {
+        if (columns[i+1][j] !== '' && columns[i+1][j] !== undefined) {
+          return Error(`It seems as though ${columns[i][j]} is already on a team.`);
+        } else {
+          response.push({name: columns[i][j], points: columns[i-1][5]});
+        }
+      }
+    }
+  }
+  // Return the response
+  return response;
+}
+
+async function transaction(auth, coachName, drops, pickups) {
+  // Forward the authentication to the sheets API requestor
+  const sheets = google.sheets({version: 'v4', auth});
+  // Get the roster index of the specified coach
+  const rosterIndex = await getRosterIndex(auth, coachName);
+  // Get the point values for the pickups
+  const pickupsWithPoints = await getPointsForTargetPokemon(auth, pickups);
+  if (pickupsWithPoints instanceof Error) {
+    return pickupsWithPoints;
+  }
+  // Make a GET request to the sheet
+  const res = await sheets.spreadsheets.values.batchGet({
+    spreadsheetId: '1-pKd7FVAo_ciEFYTUVYQyvK5vK2Ich31cOMoUhPcf-Q',
+    ranges: [
+      `Rosters!L${rosterIndex}:W${rosterIndex}`,          // Roster to update
+      `Rosters!L${rosterIndex - 8}:W${rosterIndex - 8}`,  // Roster points
+      `Rosters!H${rosterIndex}`,                          // Initial remaining points
+      `${coachName}!K18`                                  // Number of transactions remaining
+    ],
+  });
+  // Parse the responses
+  const targetRoster = res.data.valueRanges[0].values[0];
+  const targetRosterPoints = res.data.valueRanges[1].values[0];
+  const initialPointsRemaining = parseInt(res.data.valueRanges[2].values[0][0]);
+  const transactionsRemaining = parseInt(res.data.valueRanges[3].values[0][0]);
+
+  console.log(`To be dropped: ${drops.join(', ')}`);
+  console.log(`To be picked up: ${pickups.join(', ')}`);
+
+  console.log(`Transactions remaining: ${transactionsRemaining}`);
+  
+  // Validate number of transactions is sufficient
+  if (pickups.length > transactionsRemaining) {
+    return Error(`It seems you do not have enough transactions remaining to complete this request.`);
+  }
+
+  // Validate coach will not violate rules
+  if (targetRoster.length - drops.length + pickups.length < 10 ||
+      targetRoster.length - drops.length + pickups.length > 12) {
+        return Error(`It seems this transaction will violate the league's rules on team size.`);
+      }
+
+  // Validate coach has enough points to make transaction
+  let dropsPoints = initialPointsRemaining;
+  for (let i = 0; i < targetRoster.length; i++) {
+    if (drops.includes(targetRoster[i])) {
+      dropsPoints += parseInt(targetRosterPoints[i]);
+    }
+  }
+
+  let pickupsPoints = 0;
+  for (let i = 0; i < pickupsWithPoints.length; i++) {
+    pickupsPoints += parseInt(pickupsWithPoints[i].points);
+  }
+
+  console.log(`Drops points: ${dropsPoints}`);
+  console.log(`Pickups points: ${pickupsPoints}`);
+
+  if (dropsPoints < pickupsPoints) {
+    return Error(`It seems this won't give you enough points to pick up those Pokémon. Transaction not completed.`);
+  }
+
+  // Compile values to update
+  let updatedTransactionsValues = [[]];
+  const updatedTransactionsRemaining = (transactionsRemaining - pickups.length).toString();
+  updatedTransactionsValues[0].push(updatedTransactionsRemaining);
+
+  let updatedRosterValues = [[]];
+  for (let i = 0; i < targetRoster.length; i++) {
+    if (drops.includes(targetRoster[i]) && pickups.length != 0) {
+      updatedRosterValues[0].push(pickups.shift());
+    } else if (drops.includes(targetRoster[i])) {
+      updatedRosterValues[0].push('');
+    } else {
+      updatedRosterValues[0].push(targetRoster[i]);
+    }
+  }
+  while (pickups.length != 0) {
+    updatedRosterValues[0].push(pickups.shift());
+  }
+
+  // Provide data for resource
+  const data = [
+    {
+      range: `Rosters!L${rosterIndex}:W${rosterIndex}`,
+      values: updatedRosterValues
+    },
+    {
+      range: `${coachName}!K18`,
+      values: updatedTransactionsValues
+    }
+  ];
+
+  // Define resource
+  const resource = {
+    data: data,
+    valueInputOption: 'USER_ENTERED'
+  }
+
+  try {
+    const result = await sheets.spreadsheets.values.batchUpdate({
+      spreadsheetId: '1-pKd7FVAo_ciEFYTUVYQyvK5vK2Ich31cOMoUhPcf-Q',
+      resource
+    });
+    console.log('%d cells updated', result.data.totalUpdatedCells);
+    return result;
+  } catch (err) {
+    throw err;
+  }
+}
+
+exports.transactionCommand = function(coachName, drops, pickups) {
+  const response = authorize().then((client) => transaction(client, coachName, drops, pickups)).catch(console.error);
+  return response;
+}
+
+exports.getCoachNameCommand = function(discordName) {
+  const coachName = authorize().then((client) => getCoachName(client, discordName)).catch(console.error);
+  return coachName;
+}
+
+exports.givePiplupCommand = function(coachName) {
+  authorize().then((client) => givePiplup(client, coachName)).catch(console.error);
 }
