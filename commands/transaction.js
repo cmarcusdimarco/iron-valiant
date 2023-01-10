@@ -1,7 +1,7 @@
 const { SlashCommandBuilder } = require("discord.js");
 const { getCoachNameCommand, transactionCommand } = require('../google.js');
 
-// A command which 
+// A command which completes a valid transaction request for the user.
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('transaction')
