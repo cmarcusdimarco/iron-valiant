@@ -3,7 +3,7 @@ const path = require('path');
 const process = require('process');
 const {authenticate} = require('@google-cloud/local-auth');
 const {google} = require('googleapis');
-const { SlashCommandSubcommandGroupBuilder } = require('discord.js');
+import ('dotenv').config();
 
 // If modifying these scopes, delete token.json.
 const SCOPES = ['https://www.googleapis.com/auth/spreadsheets'];
@@ -68,7 +68,6 @@ async function authorize() {
 
 /**
  * Returns the name of the coach based on a specified Discord username:
- * @see https://docs.google.com/spreadsheets/d/1-pKd7FVAo_ciEFYTUVYQyvK5vK2Ich31cOMoUhPcf-Q/edit
  * @param {google.auth.OAuth2} auth The authenticated Google OAuth client.
  * @param {string} discordName The Discord username of the coach.
  */
@@ -77,7 +76,7 @@ async function getCoachName(auth, discordName) {
   const sheets = google.sheets({version: 'v4', auth});
   // Make a GET request to the sheet
   const res = await sheets.spreadsheets.values.get({
-    spreadsheetId: '1-pKd7FVAo_ciEFYTUVYQyvK5vK2Ich31cOMoUhPcf-Q',
+    spreadsheetId: process.env.SHEET_ID,
     range: 'Coaches!E1:R53',
     majorDimension: 'COLUMNS'
   });
@@ -101,7 +100,6 @@ async function getCoachName(auth, discordName) {
 
 /**
  * Returns the index that points to the specified coach's roster:
- * @see https://docs.google.com/spreadsheets/d/1-pKd7FVAo_ciEFYTUVYQyvK5vK2Ich31cOMoUhPcf-Q/edit
  * @param {google.auth.OAuth2} auth The authenticated Google OAuth client.
  * @param {string} coachName The name of the coach to match in the query.
  */
@@ -110,7 +108,7 @@ async function getRosterIndex(auth, coachName) {
   const sheets = google.sheets({version: 'v4', auth});
   // Make a GET request to the sheet
   const res = await sheets.spreadsheets.values.batchGet({
-    spreadsheetId: '1-pKd7FVAo_ciEFYTUVYQyvK5vK2Ich31cOMoUhPcf-Q',
+    spreadsheetId: process.env.SHEET_ID,
     ranges: [
       'Rosters!H1:H221',  // Coach
       'Rosters!L1:V221'   // Pokémon
@@ -136,7 +134,6 @@ async function getRosterIndex(auth, coachName) {
 
 /**
  * Gives a coach a Piplup:
- * @see https://docs.google.com/spreadsheets/d/1-pKd7FVAo_ciEFYTUVYQyvK5vK2Ich31cOMoUhPcf-Q/edit
  * @param {google.auth.OAuth2} auth The authenticated Google OAuth client.
  */
 async function givePiplup(auth, coachName) {
@@ -168,7 +165,7 @@ async function getPointsForTargetPokemon(auth, target) {
   const sheets = google.sheets({version: 'v4', auth});
   // Make a GET request to the sheet
   const res = await sheets.spreadsheets.values.get({
-    spreadsheetId: '1-pKd7FVAo_ciEFYTUVYQyvK5vK2Ich31cOMoUhPcf-Q',
+    spreadsheetId: process.env.SHEET_ID,
     range: 'Point Tier List!A1:CI77',
     majorDimension: 'COLUMNS'
   });
@@ -203,7 +200,7 @@ async function transaction(auth, coachName, drops, pickups) {
   }
   // Make a GET request to the sheet
   const res = await sheets.spreadsheets.values.batchGet({
-    spreadsheetId: '1-pKd7FVAo_ciEFYTUVYQyvK5vK2Ich31cOMoUhPcf-Q',
+    spreadsheetId: process.env.SHEET_ID,
     ranges: [
       `Rosters!L${rosterIndex}:W${rosterIndex}`,          // Roster to update
       `Rosters!L${rosterIndex - 8}:W${rosterIndex - 8}`,  // Roster points
@@ -292,7 +289,7 @@ async function transaction(auth, coachName, drops, pickups) {
 
   try {
     const result = await sheets.spreadsheets.values.batchUpdate({
-      spreadsheetId: '1-pKd7FVAo_ciEFYTUVYQyvK5vK2Ich31cOMoUhPcf-Q',
+      spreadsheetId: process.env.SHEET_ID,
       resource
     });
     console.log('%d cells updated', result.data.totalUpdatedCells);
