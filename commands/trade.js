@@ -1,4 +1,5 @@
 const { SlashCommandBuilder } = require("discord.js");
+const { getCoachNameCommand } = require('../google.js');
 require('dotenv').config();
 
 // A command which conducts a valid and accepted trade between two coaches.
@@ -41,6 +42,7 @@ module.exports = {
     async execute(interaction) {
         await interaction.deferReply();
         // Validate the input
+        const coachA = await getCoachNameCommand(interaction.user.username);
         const gives = interaction.options.getString('gives').split(',');
         const receives = interaction.options.getString('receives').split(',');
         // If trade is valid, send proposal to named coach

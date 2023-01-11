@@ -133,6 +133,62 @@ async function getRosterIndex(auth, coachName) {
 }
 
 /**
+ * Validate that the Pokémon passed in as params belong to the coach passed in as a param and return the total points of those Pokémon.
+ * @param {google.auth.OAuth2} auth The authenticated Google OAuth client.
+ * @param {string} coachName The name of the coach to match in the query.
+ * @param {string[]} pokemon An array of Pokémon to be validated.
+ */
+async function getPointsForTrade(auth, coachName, pokemon) {
+  // Forward the authentication to the sheets API requestor
+  const sheets = google.sheets({version: 'v4', auth});
+  // Make a GET request to the sheet
+  const res = await sheets.spreadsheets.values.batchGet({
+    spreadsheetId: process.env.SHEET_ID,
+    ranges: [
+      'Rosters!H1:H221',  // Coach
+      'Rosters!L1:V221'   // Pokémon
+    ],
+  });
+  // Parse the response into coach and Pokémon tables
+  const coachRows = res.data.valueRanges[0].values;
+  const pokemonRows = res.data.valueRanges[1].values;
+  const pokemonCoachDifferential = 6;   // Distance between coach cell and that coach's roster
+  const coachPointsDifferential = 6;    // Distance between coach cell and remaining points cell
+  const pokemonPointsDifferential = 8;  // Distance between individual Pokémon and their point values
+  let remainingPoints = 0;              // Amount of points coach has to start
+  let points = 0;                       // Accumulator for point values of Pokémon to trade
+  let matches = 0;                      // Validate that all Pokémon were found
+  // Exit the function if no data present (should probably check the full valueRanges response, but same thing)
+  if (!coachRows || coachRows.length === 0) {
+    console.log('No data found.');
+    return;
+  }
+  // If data present, return the corresponding Pokémon roster index
+  for (let i = 0; i < coachRows.length; i++) {
+    if (coachRows[i][0] === coachName) {
+      console.log(`Coach ${coachName} has ${pokemonRows[i + pokemonCoachDifferential].join(', ')}`);
+      remainingPoints = parseInt(coachRows[i + coachPointsDifferential][0]);
+      console.log(`Coach ${coachName} has ${points} points remaining.`);
+      for (let j = 0; j < pokemonRows[i + pokemonCoachDifferential].length; j++) {
+        if (pokemon.includes(pokemonRows[i + pokemonCoachDifferential][j])) {
+          console.log(`${pokemonRows[i + pokemonCoachDifferential][j]}: ${pokemonRows[i + pokemonCoachDifferential - pokemonPointsDifferential][j]}`);
+          points += parseInt(pokemonRows[i + pokemonCoachDifferential - pokemonPointsDifferential][j]);
+          matches++;
+        }
+      }
+      console.log(`Total points available for trade: ${points + remainingPoints}`);
+    }
+  }
+
+  // Throw error if not all matches found
+  if (matches !== pokemon.length) {
+    return new Error(`Could not validate that all provided Pokémon belong to Coach ${coachName}. Please double-check entered Pokémon.`);
+  } else {
+    return { points: points, remainingPoints: remainingPoints };
+  }
+}
+
+/**
  * Gives a coach a Piplup:
  * @param {google.auth.OAuth2} auth The authenticated Google OAuth client.
  */
@@ -221,13 +277,13 @@ async function transaction(auth, coachName, drops, pickups) {
   
   // Validate number of transactions is sufficient
   if (pickups.length > transactionsRemaining) {
-    return Error(`It seems you do not have enough transactions remaining to complete this request.`);
+    return new Error(`It seems you do not have enough transactions remaining to complete this request.`);
   }
 
   // Validate coach will not violate rules
   if (targetRoster.length - drops.length + pickups.length < 10 ||
       targetRoster.length - drops.length + pickups.length > 12) {
-        return Error(`It seems this transaction will violate the league's rules on team size.`);
+        return new Error(`It seems this transaction will violate the league's rules on team size.`);
       }
 
   // Validate coach has enough points to make transaction
@@ -247,7 +303,7 @@ async function transaction(auth, coachName, drops, pickups) {
   console.log(`Pickups points: ${pickupsPoints}`);
 
   if (dropsPoints < pickupsPoints) {
-    return Error(`It seems this won't give you enough points to pick up those Pokémon. Transaction not completed.`);
+    return new Error(`It seems this won't give you enough points to pick up those Pokémon. Transaction not completed.`);
   }
 
   // Compile values to update
@@ -298,6 +354,21 @@ async function transaction(auth, coachName, drops, pickups) {
     throw err;
   }
 }
+
+async function validateTrade(auth, coachNameA, coachNameB, pokemonOfA, pokemonOfB) {
+  // Validate ownership of Pokémon and points for trade
+  const coachA = await getPointsForTrade(auth, coachNameA, pokemonOfA);
+  const coachB = await getPointsForTrade(auth, coachNameB, pokemonOfB);
+
+  // Return Error if points will not work
+  if (coachA.points + coachA.remainingPoints < coachB.points) {
+    return new Error(`You don't have enough points to make this trade.`);
+  } else if (coachB.points + coachB.remainingPoints < coachA.points) {
+    return new Error(`Coach ${coachNameB} doesn't have enough points to make this trade.`);
+  }
+}
+
+authorize().then((client) => validateTrade(client, 'Marcus', 'Riot', ['Roaring Moon', 'Glimmora', 'Gallade-Mega'], ['Slither Wing', 'Tinkaton', 'Iron Moth']));
 
 exports.transactionCommand = function(coachName, drops, pickups) {
   const response = authorize().then((client) => transaction(client, coachName, drops, pickups)).catch(console.error);
