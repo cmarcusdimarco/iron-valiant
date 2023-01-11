@@ -158,6 +158,7 @@ async function getPointsForTrade(auth, coachName, pokemon) {
   let remainingPoints = 0;              // Amount of points coach has to start
   let points = 0;                       // Accumulator for point values of Pokémon to trade
   let matches = 0;                      // Validate that all Pokémon were found
+  let rosterSize = 0;                   // Validate roster size will not be violated as a result of trade
   // Exit the function if no data present (should probably check the full valueRanges response, but same thing)
   if (!coachRows || coachRows.length === 0) {
     console.log('No data found.');
@@ -166,6 +167,7 @@ async function getPointsForTrade(auth, coachName, pokemon) {
   // If data present, return the corresponding Pokémon roster index
   for (let i = 0; i < coachRows.length; i++) {
     if (coachRows[i][0] === coachName) {
+      rosterSize = pokemonRows[i + pokemonCoachDifferential].length;
       console.log(`Coach ${coachName} has ${pokemonRows[i + pokemonCoachDifferential].join(', ')}`);
       remainingPoints = parseInt(coachRows[i + coachPointsDifferential][0]);
       console.log(`Coach ${coachName} has ${points} points remaining.`);
@@ -184,7 +186,13 @@ async function getPointsForTrade(auth, coachName, pokemon) {
   if (matches !== pokemon.length) {
     return new Error(`Could not validate that all provided Pokémon belong to Coach ${coachName}. Please double-check entered Pokémon.`);
   } else {
-    return { points: points, remainingPoints: remainingPoints };
+    return {
+      name: coachName,
+      points: points,
+      remainingPoints: remainingPoints,
+      rosterSize: rosterSize,
+      pokemon: pokemon
+    };
   }
 }
 
@@ -360,15 +368,50 @@ async function validateTrade(auth, coachNameA, coachNameB, pokemonOfA, pokemonOf
   const coachA = await getPointsForTrade(auth, coachNameA, pokemonOfA);
   const coachB = await getPointsForTrade(auth, coachNameB, pokemonOfB);
 
-  // Return Error if points will not work
+  // Return error if the result of the trade will cause a roster size violation
+  if (coachA.rosterSize - pokemonOfA.length + pokemonOfB.length < 10 ||
+      coachA.rosterSize - pokemonOfA.length + pokemonOfB.length > 12) {
+        return new Error(`This trade will cause Coach ${coachNameA} to be in violation of the
+                          roster size requirement. Trade not completed.`);
+  }
+  if (coachB.rosterSize - pokemonOfB.length + pokemonOfA.length < 10 ||
+      coachB.rosterSize - pokemonOfB.length + pokemonOfA.length > 12) {
+        return new Error(`This trade will cause Coach ${coachNameB} to be in violation of the
+                          roster size requirement. Trade not completed.`);
+  }
+
+  // Return error if points will not work
   if (coachA.points + coachA.remainingPoints < coachB.points) {
     return new Error(`You don't have enough points to make this trade.`);
   } else if (coachB.points + coachB.remainingPoints < coachA.points) {
     return new Error(`Coach ${coachNameB} doesn't have enough points to make this trade.`);
+  } else {
+    return [coachA, coachB, auth];
   }
 }
 
-authorize().then((client) => validateTrade(client, 'Marcus', 'Riot', ['Roaring Moon', 'Glimmora', 'Gallade-Mega'], ['Slither Wing', 'Tinkaton', 'Iron Moth']));
+async function trade(auth, coaches) {
+  // Forward the authentication to the sheets API requestor
+  const sheets = google.sheets({version: 'v4', auth});
+  // Get the roster indexes of the specified coaches
+  const rosterIndexA = await getRosterIndex(auth, coaches[0].name);
+  const rosterIndexB = await getRosterIndex(auth, coaches[1].name);
+  // Make a GET request to the sheet
+  const res = await sheets.spreadsheets.values.batchGet({
+    spreadsheetId: process.env.SHEET_ID,
+    ranges: [
+      `Rosters!L${rosterIndexA}:W${rosterIndexA}`,        // RosterA to update
+      `Rosters!L${rosterIndexB}:W${rosterIndexB}`,        // RosterB to update
+    ],
+  });
+  // Parse the responses
+  const targetRosterA = res.data.valueRanges[0].values[0];
+  const targetRosterB = res.data.valueRanges[1].values[0];
+
+  console.log(targetRosterA, targetRosterB);
+}
+
+authorize().then((client) => validateTrade(client, 'Marcus', 'Riot', ['Rotom-Heat', 'Sableye'], ['Slowking', 'Glimmet'])).then((coaches) => trade(coaches[2], [coaches]));
 
 exports.transactionCommand = function(coachName, drops, pickups) {
   const response = authorize().then((client) => transaction(client, coachName, drops, pickups)).catch(console.error);
