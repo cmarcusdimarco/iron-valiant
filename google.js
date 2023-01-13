@@ -13,6 +13,9 @@ const SCOPES = ['https://www.googleapis.com/auth/spreadsheets'];
 const TOKEN_PATH = path.join(process.cwd(), 'token.json');
 const CREDENTIALS_PATH = path.join(process.cwd(), 'credentials.json');
 
+// Constants
+const MAX_ROSTER_LENGTH = 12;
+
 /**
  * Reads previously authorized credentials from the save file.
  *
@@ -349,7 +352,7 @@ async function transaction(auth, coachName, drops, pickups) {
   const resource = {
     data: data,
     valueInputOption: 'USER_ENTERED'
-  }
+  };
 
   try {
     const result = await sheets.spreadsheets.values.batchUpdate({
@@ -429,8 +432,44 @@ async function trade(auth, coaches) {
       updatedRosterB.push(targetRosterB[j++]);
     }
   }
+  // // Pad updated rosters with empty strings in order to clear unused cells
+  // for ( ; i < MAX_ROSTER_LENGTH; i++) {
+  //   updatedRosterA.push();
+  // }
+  // for ( ; j < MAX_ROSTER_LENGTH; j++) {
+  //   updatedRosterB.push();
+  // }
+  // Write back to the Google Sheet
+  const data = [
+    {
+      range: `Rosters!L${rosterIndexA}:W${rosterIndexA}`,
+      values: [
+        updatedRosterA
+      ]
+    },
+    {
+      range: `Rosters!L${rosterIndexB}:W${rosterIndexB}`,
+      values: [
+        updatedRosterB
+      ]
+    }
+  ];
+  
+  const resource = {
+    data: data,
+    valueInputOption: 'USER_ENTERED'
+  };
 
-  console.log(updatedRosterA, updatedRosterB);
+  try {
+    const result = await sheets.spreadsheets.values.batchUpdate({
+      spreadsheetId: process.env.SHEET_ID,
+      resource
+    });
+    console.log('%d cells updated', result.data.totalUpdatedCells);
+    return result;
+  } catch (err) {
+    throw err;
+  }
 }
 
 authorize().then((client) => validateTrade(client, 'Marcus', 'Riot', ['Rotom-Heat', 'Sableye'], ['Slowking', 'Dudunsparce'])).then((coaches) => trade(coaches[2], [coaches[0], coaches[1]])).catch(console.error);
