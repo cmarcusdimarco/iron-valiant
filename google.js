@@ -407,11 +407,38 @@ async function trade(auth, coaches) {
   // Parse the responses
   const targetRosterA = res.data.valueRanges[0].values[0];
   const targetRosterB = res.data.valueRanges[1].values[0];
+  // Conduct the trade
+  const updatedRosterA = [];
+  const updatedRosterB = [];
+  // Declare loop iterators i and j
+  let i = 0;
+  let j = 0;
+  // The while loop will iterate until both iterators reach their respective limits.
+  // Each iterator has its own short-circuited conditional based on its limit.
+  while (i < targetRosterA.length && j < targetRosterB.length) {
+    // If the named Pokémon appears in the 'To Trade' list, push to the other coach's roster and increment the iterator.
+    if (i < targetRosterA.length && coaches[0].pokemon.includes(targetRosterA[i])) {
+      updatedRosterB.push(targetRosterA[i++]);
+      // Otherwise, push to the initial coach's roster and increment the iterator.
+    } else {
+      updatedRosterA.push(targetRosterA[i++]);
+    }
+    if (j < targetRosterB.length && coaches[1].pokemon.includes(targetRosterB[j])) {
+      updatedRosterA.push(targetRosterB[j++]);
+    } else {
+      updatedRosterB.push(targetRosterB[j++]);
+    }
+  }
 
-  console.log(targetRosterA, targetRosterB);
+  console.log(updatedRosterA, updatedRosterB);
 }
 
-authorize().then((client) => validateTrade(client, 'Marcus', 'Riot', ['Rotom-Heat', 'Sableye'], ['Slowking', 'Glimmet'])).then((coaches) => trade(coaches[2], [coaches]));
+authorize().then((client) => validateTrade(client, 'Marcus', 'Riot', ['Rotom-Heat', 'Sableye'], ['Slowking', 'Dudunsparce'])).then((coaches) => trade(coaches[2], [coaches[0], coaches[1]])).catch(console.error);
+
+exports.validateTradeCommand = function(coachNameA, coachNameB, pokemonOfA, pokemonOfB) {
+  const coaches = authorize().then((client) => validateTrade(client, coachNameA, coachNameB, pokemonOfA, pokemonOfB));
+  return coaches;
+}
 
 exports.transactionCommand = function(coachName, drops, pickups) {
   const response = authorize().then((client) => transaction(client, coachName, drops, pickups)).catch(console.error);
