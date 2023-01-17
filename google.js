@@ -472,7 +472,7 @@ async function trade(auth, coaches) {
   }
 }
 
-authorize().then((client) => validateTrade(client, 'Marcus', 'Riot', ['Rotom-Heat', 'Sableye'], ['Slowking', 'Dudunsparce'])).then((coaches) => trade(coaches[2], [coaches[0], coaches[1]])).catch(console.error);
+// authorize().then((client) => validateTrade(client, 'Marcus', 'Riot', ['Rotom-Heat', 'Sableye'], ['Slowking', 'Dudunsparce'])).then((coaches) => trade(coaches[2], [coaches[0], coaches[1]])).catch(console.error);
 
 exports.validateTradeCommand = function(coachNameA, coachNameB, pokemonOfA, pokemonOfB) {
   const coaches = authorize().then((client) => validateTrade(client, coachNameA, coachNameB, pokemonOfA, pokemonOfB));
