@@ -389,7 +389,7 @@ async function validateTrade(auth, coachNameA, coachNameB, pokemonOfA, pokemonOf
   } else if (coachB.points + coachB.remainingPoints < coachA.points) {
     return new Error(`Coach ${coachNameB} doesn't have enough points to make this trade.`);
   } else {
-    return [coachA, coachB, auth];
+    return [coachA, coachB];
   }
 }
 
@@ -472,23 +472,26 @@ async function trade(auth, coaches) {
   }
 }
 
-// authorize().then((client) => validateTrade(client, 'Marcus', 'Riot', ['Rotom-Heat', 'Sableye'], ['Slowking', 'Dudunsparce'])).then((coaches) => trade(coaches[2], [coaches[0], coaches[1]])).catch(console.error);
+exports.tradeCommand = function(coaches) {
+  const response = authorize().then(client => trade(client, coaches)).catch(console.error);
+  return response;
+}
 
 exports.validateTradeCommand = function(coachNameA, coachNameB, pokemonOfA, pokemonOfB) {
-  const coaches = authorize().then((client) => validateTrade(client, coachNameA, coachNameB, pokemonOfA, pokemonOfB));
+  const coaches = authorize().then(client => validateTrade(client, coachNameA, coachNameB, pokemonOfA, pokemonOfB)).catch(console.error);
   return coaches;
 }
 
 exports.transactionCommand = function(coachName, drops, pickups) {
-  const response = authorize().then((client) => transaction(client, coachName, drops, pickups)).catch(console.error);
+  const response = authorize().then(client => transaction(client, coachName, drops, pickups)).catch(console.error);
   return response;
 }
 
 exports.getCoachNameCommand = function(discordName) {
-  const coachName = authorize().then((client) => getCoachName(client, discordName)).catch(console.error);
+  const coachName = authorize().then(client => getCoachName(client, discordName)).catch(console.error);
   return coachName;
 }
 
 exports.givePiplupCommand = function(coachName) {
-  authorize().then((client) => givePiplup(client, coachName)).catch(console.error);
+  authorize().then(client => givePiplup(client, coachName)).catch(console.error);
 }
