@@ -63,7 +63,7 @@ module.exports = {
         
         // Process the new input
         const channel = interaction.channel;
-        const collector = channel.createMessageComponentCollector({ componentType: ComponentType.Button, time: 5000 });
+        const collector = channel.createMessageComponentCollector({ componentType: ComponentType.Button, time: 900000 });
         let reacted = false;
         
         collector.on('collect', async i => {
